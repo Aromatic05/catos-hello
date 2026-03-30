@@ -21,7 +21,7 @@ int main(int argc, char *argv[])
 
     QTranslator translator;
     if (!lang.isEmpty()) {
-        if (translator.load(":/translations/CatOS-Hello_" + lang + ".qm")) {
+        if (translator.load(":/translations/catos-hello_" + lang + ".qm")) {
             app.installTranslator(&translator);
         }
     }
@@ -31,4 +31,3 @@ int main(int argc, char *argv[])
 
     return app.exec();
 }
-

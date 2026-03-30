@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 4.0.0)
 
 project(CatOS-Hello VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(APP_TARGET catos-hello)
+set(APP_I18N_PREFIX catos-hello)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
@@ -24,21 +26,21 @@ set(PROJECT_SOURCES
 )
 
 # 创建可执行文件
-qt_add_executable(CatOS-Hello
+qt_add_executable(${APP_TARGET}
     ${PROJECT_SOURCES}
 )
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    target_compile_options(CatOS-Hello PRIVATE -mno-avx512f)
+    target_compile_options(${APP_TARGET} PRIVATE -mno-avx512f)
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(CatOS-Hello PRIVATE /arch:AVX2)
+    target_compile_options(${APP_TARGET} PRIVATE /arch:AVX2)
 endif()
 
 # 定义 .ts 文件
 set(TS_FILES
-    ${CMAKE_SOURCE_DIR}/translations/CatOS-Hello_zh_CN.ts
-    ${CMAKE_SOURCE_DIR}/translations/CatOS-Hello_fr.ts
-    ${CMAKE_SOURCE_DIR}/translations/CatOS-Hello_de.ts
+    ${CMAKE_SOURCE_DIR}/translations/${APP_I18N_PREFIX}_zh_CN.ts
+    ${CMAKE_SOURCE_DIR}/translations/${APP_I18N_PREFIX}_fr.ts
+    ${CMAKE_SOURCE_DIR}/translations/${APP_I18N_PREFIX}_de.ts
 )
 
 # 添加 lupdate 作为构建前的目标
@@ -48,10 +50,10 @@ add_custom_target(update_translations
 )
 
 # 让 lupdate 在每次构建前自动触发
-add_dependencies(CatOS-Hello update_translations)
+add_dependencies(${APP_TARGET} update_translations)
 
 # 生成 .qm 文件
-qt_add_lrelease(CatOS-Hello
+qt_add_lrelease(${APP_TARGET}
     TS_FILES ${TS_FILES}
     QM_FILES_OUTPUT_VARIABLE QM_FILES
 )
@@ -60,9 +62,9 @@ qt_add_lrelease(CatOS-Hello
 file(WRITE ${CMAKE_BINARY_DIR}/translations.qrc
 [[<RCC>
     <qresource prefix="/translations">
-        <file>CatOS-Hello_zh_CN.qm</file>
-        <file>CatOS-Hello_fr.qm</file>
-        <file>CatOS-Hello_de.qm</file>
+        <file>catos-hello_zh_CN.qm</file>
+        <file>catos-hello_fr.qm</file>
+        <file>catos-hello_de.qm</file>
     </qresource>
 </RCC>]])
 
@@ -71,14 +73,14 @@ set(RESOURCES
     ${CMAKE_BINARY_DIR}/translations.qrc
 )
 
-target_compile_options(CatOS-Hello PRIVATE -fsanitize=address)
-target_link_options(CatOS-Hello PRIVATE -fsanitize=address)
+target_compile_options(${APP_TARGET} PRIVATE -fsanitize=address)
+target_link_options(${APP_TARGET} PRIVATE -fsanitize=address)
 
-qt_add_resources(CatOS-Hello_RESOURCES ${RESOURCES})
-target_sources(CatOS-Hello PRIVATE ${CatOS-Hello_RESOURCES})
+qt_add_resources(APP_RESOURCES_RCC ${RESOURCES})
+target_sources(${APP_TARGET} PRIVATE ${APP_RESOURCES_RCC})
 
 # 链接 Qt 库
-target_link_libraries(CatOS-Hello PRIVATE Qt6::Widgets Qt6::Network)
+target_link_libraries(${APP_TARGET} PRIVATE Qt6::Widgets Qt6::Network)
 
 # 测试支持
 option(BUILD_TESTS "Build tests" OFF)
@@ -86,4 +88,3 @@ if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
-
