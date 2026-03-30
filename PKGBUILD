@@ -24,6 +24,10 @@ package() {
 
     # 安装桌面环境包清单
     install -Dm644 desktop.yaml "$pkgdir/var/lib/catos-hello/desktop.yaml"
+    install -d "$pkgdir/var/lib/catos-hello/news"
+    for news_html in news/*.html; do
+        install -Dm644 "$news_html" "$pkgdir/var/lib/catos-hello/news/$(basename "$news_html")"
+    done
 
     # 安装 toolkit 工具到 /usr/bin
     for tool in clean mirror-update pac pacd pacr pak sysup; do

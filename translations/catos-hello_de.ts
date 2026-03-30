@@ -740,48 +740,4 @@ sudo pacman -S rate-mirrors</translation>
         <translation>Sie haben ungespeicherte Änderungen. Möchten Sie diese vor dem Schließen speichern?</translation>
     </message>
 </context>
-<context>
-    <name>TipsTab</name>
-    <message>
-        <source>
-&lt;h3&gt;Useful tips and links&lt;/h3&gt;
-... (omitted long HTML content) ...
-</source>
-        <translation type="vanished">
-&lt;h3&gt;Nützliche Tipps und Links&lt;/h3&gt;
-... (langer HTML-Inhalt ausgelassen) ...
-</translation>
-    </message>
-    <message>
-        <location filename="../TipsTab.cpp" line="11"/>
-        <source>
-&lt;h3&gt;Useful tips and links&lt;/h3&gt;
-When finished offline install tasks, you should click the &quot;Offline Post-install: Refresh Keys&amp; Update&quot; button to ensure your system is up to date and has the latest keys. After that, here are some tips and links to help you get started with CatOS:
-
-&lt;p&gt;&lt;b&gt;Change common user directories to English&lt;/b&gt;&lt;br&gt;
-Run the following command in an English locale to force user directories to English:&lt;/p&gt;
-&lt;pre&gt;env LANG=en_US.UTF8 xdg-user-dirs-update --force&lt;/pre&gt;
-
-&lt;p&gt;&lt;b&gt;Input method troubleshooting&lt;/b&gt;&lt;br&gt;
-&lt;a href=&quot;https://github.com/SHORiN-KiWATA/Shorin-ArchLinux-Guide/wiki/中文输入法&quot;&gt;https://github.com/SHORiN-KiWATA/Shorin-ArchLinux-Guide/wiki/中文输入法&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;&lt;b&gt;fcitx official Wayland documentation&lt;/b&gt;&lt;br&gt;
-&lt;a href=&quot;https://fcitx-im.org/wiki/Special:MyLanguage/Using_Fcitx_5_on_Wayland&quot;&gt;https://fcitx-im.org/wiki/Special:MyLanguage/Using_Fcitx_5_on_Wayland&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;&lt;b&gt;Community guide&lt;/b&gt;&lt;br&gt;
-&lt;a href=&quot;https://github.com/SHORiN-KiWATA/Shorin-ArchLinux-Guide/wiki&quot;&gt;https://github.com/SHORiN-KiWATA/Shorin-ArchLinux-Guide/wiki&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;&lt;b&gt;Recommended reading&lt;/b&gt;&lt;/p&gt;
-&lt;ul&gt;
-    &lt;li&gt;&lt;a href=&quot;https://wiki.archlinuxcn.org/wiki/建议阅读/给新用户的关于如何不去弄坏_Arch_Linux_系统的建议&quot;&gt;New user advice&lt;/a&gt;&lt;/li&gt;
-    &lt;li&gt;&lt;a href=&quot;https://wiki.archlinuxcn.org/wiki/建议阅读&quot;&gt;Recommended reading&lt;/a&gt;&lt;/li&gt;
-    &lt;li&gt;&lt;a href=&quot;https://wiki.archlinuxcn.org/wiki/Pacman/提示和技巧&quot;&gt;Pacman tips&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;&lt;b&gt;My advice&lt;/b&gt;&lt;br&gt;
-Every Arch Linux user should take responsibility for the stability of their rolling-release system. Complaining about breakage is unproductive; upstream changes are not the responsibility of Arch developers.&lt;/p&gt;
-</source>
-        <translation type="unfinished"></translation>
-    </message>
-</context>
 </TS>

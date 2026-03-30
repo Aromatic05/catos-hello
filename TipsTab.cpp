@@ -1,47 +1,82 @@
 #include "TipsTab.h"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QLocale>
+#include <QStringList>
+
 TipsTab::TipsTab(QWidget *parent)
     : QWidget(parent)
 {
-    // 创建布局和控件
     layout = new QVBoxLayout(this);
     tipsBrowser = new QTextBrowser(this);
 
-    // HTML content with English links and short instructions
-        const QString html = tr(R"HTML(
-<h3>Useful tips and links</h3>
-When finished offline install tasks, you should click the "Offline Post-install: Refresh Keys& Update" button to ensure your system is up to date and has the latest keys. After that, here are some tips and links to help you get started with CatOS:
-
-<p><b>Change common user directories to English</b><br>
-Run the following command in an English locale to force user directories to English:</p>
-<pre>env LANG=en_US.UTF8 xdg-user-dirs-update --force</pre>
-
-<p><b>Input method troubleshooting</b><br>
-<a href="https://github.com/SHORiN-KiWATA/Shorin-ArchLinux-Guide/wiki/中文输入法">https://github.com/SHORiN-KiWATA/Shorin-ArchLinux-Guide/wiki/中文输入法</a></p>
-
-<p><b>fcitx official Wayland documentation</b><br>
-<a href="https://fcitx-im.org/wiki/Special:MyLanguage/Using_Fcitx_5_on_Wayland">https://fcitx-im.org/wiki/Special:MyLanguage/Using_Fcitx_5_on_Wayland</a></p>
-
-<p><b>Community guide</b><br>
-<a href="https://github.com/SHORiN-KiWATA/Shorin-ArchLinux-Guide/wiki">https://github.com/SHORiN-KiWATA/Shorin-ArchLinux-Guide/wiki</a></p>
-
-<p><b>Recommended reading</b></p>
-<ul>
-    <li><a href="https://wiki.archlinuxcn.org/wiki/建议阅读/给新用户的关于如何不去弄坏_Arch_Linux_系统的建议">New user advice</a></li>
-    <li><a href="https://wiki.archlinuxcn.org/wiki/建议阅读">Recommended reading</a></li>
-    <li><a href="https://wiki.archlinuxcn.org/wiki/Pacman/提示和技巧">Pacman tips</a></li>
-</ul>
-
-<p><b>My advice</b><br>
-Every Arch Linux user should take responsibility for the stability of their rolling-release system. Complaining about breakage is unproductive; upstream changes are not the responsibility of Arch developers.</p>
-)HTML");
-
-    tipsBrowser->setHtml(html);
+    tipsBrowser->setHtml(loadTipsHtml(detectUiLanguage()));
     tipsBrowser->setOpenExternalLinks(true);
 
-    // 添加控件到布局
     layout->addWidget(tipsBrowser);
-
-    // 设置布局
     setLayout(layout);
+}
+
+QString TipsTab::detectUiLanguage() const
+{
+    const QString cliLang = QCoreApplication::arguments().value(1).trimmed();
+    if (!cliLang.isEmpty()) {
+        return cliLang;
+    }
+    return QLocale::system().name();
+}
+
+QString TipsTab::locateTipsHtml(const QString& uiLang) const
+{
+    const QString normalized = uiLang.trimmed();
+    const QString languageOnly = normalized.section('_', 0, 0);
+
+    const QStringList fileCandidates = {
+        normalized + QStringLiteral(".html"),
+        languageOnly + QStringLiteral(".html"),
+        QStringLiteral("en_US.html"),
+        QStringLiteral("en.html")
+    };
+
+    const QStringList baseDirs = {
+        QStringLiteral("/var/lib/catos-hello/news"),
+        QDir::currentPath() + QStringLiteral("/news"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/news")
+    };
+
+    for (const QString& dir : baseDirs) {
+        for (const QString& file : fileCandidates) {
+            if (file == QStringLiteral(".html")) {
+                continue;
+            }
+            const QString path = dir + QLatin1Char('/') + file;
+            if (QFileInfo::exists(path) && QFileInfo(path).isFile()) {
+                return path;
+            }
+        }
+    }
+    return QString();
+}
+
+QString TipsTab::loadTipsHtml(const QString& uiLang) const
+{
+    const QString htmlPath = locateTipsHtml(uiLang);
+    if (htmlPath.isEmpty()) {
+        return QStringLiteral(
+            "<h3>Tips Content Missing</h3>"
+            "<p>Could not find tips HTML under /var/lib/catos-hello/news.</p>");
+    }
+
+    QFile file(htmlPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return QStringLiteral(
+            "<h3>Tips Content Error</h3>"
+            "<p>Failed to read tips HTML file: %1</p>")
+            .arg(htmlPath.toHtmlEscaped());
+    }
+
+    return QString::fromUtf8(file.readAll());
 }

@@ -2,7 +2,7 @@
 #define TIPSTAB_H
 
 #include <QWidget>
-#include <QLabel>
+#include <QString>
 #include <QTextBrowser>
 #include <QVBoxLayout>
 
@@ -14,8 +14,12 @@ public:
     explicit TipsTab(QWidget *parent = nullptr);
 
 private:
-    QTextBrowser *tipsBrowser;
-    QVBoxLayout *layout;
+    QString detectUiLanguage() const;
+    QString locateTipsHtml(const QString& uiLang) const;
+    QString loadTipsHtml(const QString& uiLang) const;
+
+    QTextBrowser* tipsBrowser {};
+    QVBoxLayout* layout {};
 };
 
 #endif // TIPSTAB_H
