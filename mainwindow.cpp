@@ -38,7 +38,7 @@ MainWindow::MainWindow(QWidget *parent)
     mainTabWidget->addTab(new PostInstallGuideTab(this), tr("Post-Install Guide"));
     mainTabWidget->addTab(new AssistantTab(this), tr("Assistant"));
     mainTabWidget->addTab(new TipsTab(this), tr("Tips"));
-    // mainTabWidget->addTab(new InstallAppsTab(this), tr("Install More Apps"));
+    mainTabWidget->addTab(new InstallAppsTab(this), tr("Install More Apps"));
 
     // 将Tab控件添加到布局中
     mainLayout->addWidget(mainTabWidget);

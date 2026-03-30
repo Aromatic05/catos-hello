@@ -1,7 +1,7 @@
 # Maintainer: Aromatic <symwww@outlook.com>
 pkgname=catos-hello
 pkgver=0.1.0
-pkgrel=4
+pkgrel=5
 pkgdesc="CatOS Hello - welcome application"
 arch=('x86_64')
 url="https://github.com/Aromatic05/catOS-hello"
@@ -21,6 +21,10 @@ package() {
     install -d "$pkgdir/usr/bin"
 
     cd catos-hello
+
+    # 安装桌面环境包清单
+    install -Dm644 desktop.yaml "$pkgdir/var/lib/catos-hello/desktop.yaml"
+
     # 安装 toolkit 工具到 /usr/bin
     for tool in clean mirror-update pac pacd pacr pak sysup; do
         install -Dm755 "toolkits/$tool" "$pkgdir/usr/bin/$tool"

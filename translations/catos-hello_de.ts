@@ -183,9 +183,85 @@
 <context>
     <name>InstallAppsTab</name>
     <message>
-        <location filename="../InstallAppsTab.cpp" line="8"/>
         <source>Expand your software collection.</source>
-        <translation>Erweitern Sie Ihre Software-Sammlung.</translation>
+        <translation type="vanished">Erweitern Sie Ihre Software-Sammlung.</translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="26"/>
+        <source>Select desktop environment packages to install.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="31"/>
+        <source>Desktop / Package</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="31"/>
+        <source>Description / Status</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="39"/>
+        <source>Install Selected</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="40"/>
+        <source>Reload</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="81"/>
+        <source>desktop.yaml not found. Expected at /var/lib/catos-hello/desktop.yaml</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="89"/>
+        <source>Unable to open %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="94"/>
+        <source>Data source: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="172"/>
+        <source>No desktop groups found in %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="216"/>
+        <source>Installed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="216"/>
+        <source>Not installed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="252"/>
+        <location filename="../InstallAppsTab.cpp" line="266"/>
+        <location filename="../InstallAppsTab.cpp" line="287"/>
+        <source>Install Apps</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="267"/>
+        <source>RunInTerminal not found at %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="287"/>
+        <source>No new packages selected for installation.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../InstallAppsTab.cpp" line="294"/>
+        <source>Install desktop environment packages</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -219,6 +295,11 @@
         <location filename="../mainwindow.cpp" line="40"/>
         <source>Tips</source>
         <translation>Tipps</translation>
+    </message>
+    <message>
+        <location filename="../mainwindow.cpp" line="41"/>
+        <source>Install More Apps</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../mainwindow.cpp" line="51"/>
