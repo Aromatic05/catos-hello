@@ -1,0 +1,655 @@
+#!/bin/bash
+# Description: 系统与环境清理脚本
+
+# 【功能说明】
+# 1. 移除孤儿软件包 (Orphans)
+# 2. 清理软件包缓存 (默认保留安装包，all 模式下完全清空)
+# 3. 清理残留下载目录 (download-*)
+# 4. 清理 systemd 日志 (只保留最近 2 周)
+# 5. 清理 systemd-coredump
+# 6. 清空用户回收站、缩略图与剪贴板缓存
+# 7. 移除未使用的 Flatpak 运行时
+# 8. 清理旧 Btrfs 快照与 btrfs-assistant 冗余备份子卷
+#    (仅在「根分区是 btrfs 且 snapper 可用」时执行；all 模式保留 before 节点)
+
+set -euo pipefail
+
+SKIP_CONFIRM=false
+CLEAN_ALL=false
+DRY_RUN=false
+PKG_MNGR=""
+SUDO_PID=""
+declare -a SNAPPER_CONFIGS=()
+
+if [[ "${LC_MESSAGES:-${LANG:-}}" == *zh_CN* ]]; then
+  UI_LANG="zh"
+else
+  UI_LANG="en"
+fi
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [options]
+
+Options:
+  --ui-lang zh|en    Force UI language (default: auto)
+  all, --all         Enable aggressive cleanup (clear all cache & snapshots)
+  --dry-run          Preview actions without making changes
+  --yes, -y          Skip confirmation prompt (non-interactive)
+  --help, -h         Show this help and exit
+EOF
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --ui-lang)
+      if [[ "${2:-}" =~ ^(zh|en)$ ]]; then
+        UI_LANG="$2"
+        shift 2
+      else
+        echo "Error: --ui-lang requires zh or en."
+        exit 1
+      fi
+      ;;
+    all | --all)
+      CLEAN_ALL=true
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    --yes | -y)
+      SKIP_CONFIRM=true
+      shift
+      ;;
+    --help | -h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      usage
+      exit 1
+      ;;
+    esac
+  done
+}
+
+declare -A MSG
+
+setup_messages() {
+  if [[ "$UI_LANG" == "zh" ]]; then
+    TAG_INFO="[消息]"
+    TAG_SUCCESS="[成功]"
+    TAG_WARN="[注意]"
+    TAG_ERROR="[错误]"
+
+    MSG[INTRO_HEADER]="=== Arch Linux 系统清理助手 ==="
+    MSG[DESC_TITLE]="本脚本将执行以下清理操作："
+    MSG[DESC_1]="1. 删除孤儿软件包 (不再被需要的依赖)"
+    MSG[DESC_2]="2. 清理软件包缓存 (仅保留已安装版本)"
+    MSG[DESC_3]="3. 清理残留下载目录 (download-*)"
+    MSG[DESC_4]="4. 清理 systemd 日志 (保留最近 2 周)"
+    MSG[DESC_5]="5. 清理 systemd-coredump"
+    MSG[DESC_6]="6. 清空回收站、缩略图和剪贴板缓存"
+    MSG[DESC_7]="7. 删除未使用的 Flatpak 运行时"
+    MSG[DESC_8]="8. 清理旧 Btrfs 快照与冗余备份子卷 (条件满足才执行)"
+
+    MSG[DESC_ALL_1]="* [ALL模式] 完全清空所有软件包缓存 (-Scc)"
+    MSG[DESC_ALL_2]="* [ALL模式] 利用 snapper 清空快照 (保留 before 节点)"
+    MSG[DESC_DRY]="* [DRY-RUN] 仅预览，不执行实际删除"
+
+    MSG[ASK_CONFIRM]="是否继续执行清理？[Y/n]"
+    MSG[ABORT]="用户已取消清理。"
+    MSG[DONE]="系统清理完成！"
+    MSG[SUDO_FAIL]="sudo 鉴权失败。"
+    MSG[DRY_WOULD_RUN]="[DRY-RUN] 将执行: %s"
+    MSG[DRY_STEP_DONE]="[DRY-RUN] 已完成预览，未执行实际更改。"
+
+    MSG[NO_HELPER]="未找到受支持的包管理器 (需要 paru, yay 或 pacman)"
+    MSG[HELPER_USE]="使用包管理器：%s"
+
+    MSG[STEP_ORPHAN]="正在检查孤儿软件包..."
+    MSG[ORPHAN_FOUND]="发现孤儿软件包，准备清理..."
+    MSG[ORPHAN_CLEAN]="已删除孤儿软件包。"
+    MSG[ORPHAN_NONE]="未发现孤儿软件包。"
+
+    MSG[STEP_CACHE]="正在清理软件包缓存..."
+    MSG[CACHE_DONE]="软件包缓存已清理。"
+    MSG[STEP_CACHE_ALL]="正在完全清空所有软件包缓存 (-Scc)..."
+    MSG[CACHE_ALL_DONE]="所有软件包缓存已清空。"
+
+    MSG[STEP_BROKEN]="正在清理残留下载目录..."
+    MSG[BROKEN_DONE]="残留目录已清理。"
+
+    MSG[STEP_LOG]="正在清理 systemd 日志..."
+    MSG[LOG_DONE]="系统日志已清理。"
+
+    MSG[STEP_COREDUMP]="正在清理 systemd-coredump..."
+    MSG[COREDUMP_DONE]="systemd-coredump 已清理。"
+    MSG[COREDUMP_NONE]="未发现 coredump 文件。"
+
+    MSG[STEP_TRASH]="正在清理回收站、缩略图和剪贴板缓存..."
+    MSG[TRASH_DONE]="回收站已清空。"
+    MSG[THUMB_DONE]="缩略图已清理。"
+    MSG[CLIP_DONE]="剪贴板缓存已清理。"
+
+    MSG[STEP_FLATPAK]="正在检查未使用的 Flatpak 运行时..."
+    MSG[FLATPAK_DONE]="未使用的 Flatpak 运行时已删除。"
+
+    MSG[STEP_BTRFS_CHECK]="正在检测 Btrfs + snapper 条件..."
+    MSG[BTRFS_SKIP_NOT_BTRFS]="根文件系统不是 btrfs，跳过快照与备份子卷清理。"
+    MSG[BTRFS_SKIP_NO_SNAPPER]="未检测到 snapper，跳过快照与备份子卷清理。"
+    MSG[BTRFS_SKIP_NO_CONFIG]="未检测到 snapper 配置，跳过快照与备份子卷清理。"
+
+    MSG[STEP_SNAP]="正在执行 snapper 自动清理策略..."
+    MSG[SNAP_DONE]="snapper 自动清理已完成。"
+    MSG[STEP_CLEAR_SNAP]="正在利用 snapper 清空快照 (保留 before 节点)..."
+    MSG[CLEAR_SNAP_DONE]="快照清理已完成。"
+
+    MSG[STEP_BTRFS_BA]="正在检查 btrfs-assistant 冗余备份子卷..."
+    MSG[BTRFS_TOOL_MISSING]="未检测到 btrfs 命令，跳过备份子卷清理。"
+    MSG[BTRFS_MOUNT_FAIL]="无法挂载 btrfs 顶层子卷，跳过备份子卷清理。"
+    MSG[BTRFS_BA_DONE]="冗余备份子卷已删除。"
+    MSG[BTRFS_BA_NONE]="未发现冗余备份子卷。"
+  else
+    TAG_INFO="[INFO]"
+    TAG_SUCCESS="[OK]"
+    TAG_WARN="[WARN]"
+    TAG_ERROR="[ERROR]"
+
+    MSG[INTRO_HEADER]="=== Arch Linux System Cleanup Assistant ==="
+    MSG[DESC_TITLE]="The script will perform the following tasks:"
+    MSG[DESC_1]="1. Remove orphaned packages"
+    MSG[DESC_2]="2. Clean package cache (keep installed)"
+    MSG[DESC_3]="3. Remove residual download directories (download-*)"
+    MSG[DESC_4]="4. Vacuum systemd journal logs (keep 2 weeks)"
+    MSG[DESC_5]="5. Clean systemd-coredump"
+    MSG[DESC_6]="6. Empty Trash, thumbnail and clipboard cache"
+    MSG[DESC_7]="7. Remove unused Flatpak runtimes"
+    MSG[DESC_8]="8. Clean old btrfs snapshots and backup subvolumes (conditional)"
+
+    MSG[DESC_ALL_1]="* [ALL MODE] Completely clear package cache (-Scc)"
+    MSG[DESC_ALL_2]="* [ALL MODE] Clear snapshots by snapper (keep 'before' nodes)"
+    MSG[DESC_DRY]="* [DRY-RUN] Preview only, no destructive changes"
+
+    MSG[ASK_CONFIRM]="Continue with cleanup? [Y/n]"
+    MSG[ABORT]="Cleanup cancelled by user."
+    MSG[DONE]="System cleanup completed!"
+    MSG[SUDO_FAIL]="sudo authentication failed."
+    MSG[DRY_WOULD_RUN]="[DRY-RUN] would run: %s"
+    MSG[DRY_STEP_DONE]="[DRY-RUN] preview completed, no changes made."
+
+    MSG[NO_HELPER]="No supported package manager found (paru, yay, or pacman required)."
+    MSG[HELPER_USE]="Using package manager: %s"
+
+    MSG[STEP_ORPHAN]="Checking for orphaned packages..."
+    MSG[ORPHAN_FOUND]="Orphaned packages detected, cleaning..."
+    MSG[ORPHAN_CLEAN]="Orphaned packages removed."
+    MSG[ORPHAN_NONE]="No orphaned packages found."
+
+    MSG[STEP_CACHE]="Cleaning package cache..."
+    MSG[CACHE_DONE]="Package cache cleaned."
+    MSG[STEP_CACHE_ALL]="Completely cleaning package cache (-Scc)..."
+    MSG[CACHE_ALL_DONE]="All package cache cleared."
+
+    MSG[STEP_BROKEN]="Cleaning residual download directories..."
+    MSG[BROKEN_DONE]="Residual directories removed."
+
+    MSG[STEP_LOG]="Vacuuming systemd journal logs..."
+    MSG[LOG_DONE]="Systemd journal logs cleaned."
+
+    MSG[STEP_COREDUMP]="Cleaning systemd-coredump..."
+    MSG[COREDUMP_DONE]="systemd-coredump cleaned."
+    MSG[COREDUMP_NONE]="No coredump files found."
+
+    MSG[STEP_TRASH]="Cleaning user Trash, thumbnails and clipboard cache..."
+    MSG[TRASH_DONE]="Trash emptied."
+    MSG[THUMB_DONE]="Thumbnails cleaned."
+    MSG[CLIP_DONE]="Clipboard cache cleaned."
+
+    MSG[STEP_FLATPAK]="Checking for unused Flatpak runtimes..."
+    MSG[FLATPAK_DONE]="Unused Flatpak runtimes removed."
+
+    MSG[STEP_BTRFS_CHECK]="Checking btrfs + snapper requirements..."
+    MSG[BTRFS_SKIP_NOT_BTRFS]="Root filesystem is not btrfs; skip snapshot and backup-subvolume cleanup."
+    MSG[BTRFS_SKIP_NO_SNAPPER]="snapper is not available; skip snapshot and backup-subvolume cleanup."
+    MSG[BTRFS_SKIP_NO_CONFIG]="No snapper config detected; skip snapshot and backup-subvolume cleanup."
+
+    MSG[STEP_SNAP]="Running snapper auto-cleanup..."
+    MSG[SNAP_DONE]="snapper auto-cleanup completed."
+    MSG[STEP_CLEAR_SNAP]="Clearing snapshots via snapper (keeping 'before' nodes)..."
+    MSG[CLEAR_SNAP_DONE]="Snapshot cleanup completed."
+
+    MSG[STEP_BTRFS_BA]="Checking btrfs-assistant backup subvolumes..."
+    MSG[BTRFS_TOOL_MISSING]="btrfs command not found; skip backup-subvolume cleanup."
+    MSG[BTRFS_MOUNT_FAIL]="Unable to mount btrfs top-level subvolume; skip backup-subvolume cleanup."
+    MSG[BTRFS_BA_DONE]="Backup subvolumes cleaned."
+    MSG[BTRFS_BA_NONE]="No redundant backup subvolumes found."
+  fi
+}
+
+NC='\033[0m'
+H_BLUE='\033[1;34m'
+H_GREEN='\033[1;32m'
+H_YELLOW='\033[1;33m'
+H_RED='\033[1;31m'
+H_CYAN='\033[1;36m'
+
+_info() {
+  local fmt=$1
+  shift
+  printf "${H_BLUE}%-10s${NC} ${fmt}\n" "${TAG_INFO}" "$@"
+}
+
+_success() {
+  local fmt=$1
+  shift
+  printf "${H_GREEN}%-10s${NC} ${fmt}\n" "${TAG_SUCCESS}" "$@"
+}
+
+_warn() {
+  local fmt=$1
+  shift
+  printf "${H_YELLOW}%-10s${NC} ${fmt}\n" "${TAG_WARN}" "$@"
+}
+
+_error() {
+  local fmt=$1
+  shift
+  printf "${H_RED}%-10s${NC} ${fmt}\n" "${TAG_ERROR}" "$@"
+  exit 1
+}
+
+dry_run_action() {
+  local action=$1
+  _warn "${MSG[DRY_WOULD_RUN]}" "$action"
+}
+
+cleanup_on_exit() {
+  if [[ -n "${SUDO_PID:-}" ]]; then
+    kill "$SUDO_PID" 2>/dev/null || true
+  fi
+}
+
+detect_package_manager() {
+  if command -v paru >/dev/null 2>&1; then
+    PKG_MNGR="paru"
+  elif command -v yay >/dev/null 2>&1; then
+    PKG_MNGR="yay"
+  elif command -v pacman >/dev/null 2>&1; then
+    PKG_MNGR="pacman"
+  else
+    _error "${MSG[NO_HELPER]}"
+  fi
+}
+
+print_intro_and_confirm() {
+  if [[ "$SKIP_CONFIRM" == true ]]; then
+    return
+  fi
+
+  printf "\n${H_CYAN}%s${NC}\n" "${MSG[INTRO_HEADER]}"
+  printf "%s\n" "${MSG[DESC_TITLE]}"
+  printf "  %s\n" "${MSG[DESC_1]}"
+  printf "  %s\n" "${MSG[DESC_2]}"
+  printf "  %s\n" "${MSG[DESC_3]}"
+  printf "  %s\n" "${MSG[DESC_4]}"
+  printf "  %s\n" "${MSG[DESC_5]}"
+  printf "  %s\n" "${MSG[DESC_6]}"
+  printf "  %s\n" "${MSG[DESC_7]}"
+  printf "  %s\n" "${MSG[DESC_8]}"
+
+  if [[ "$CLEAN_ALL" == true ]]; then
+    printf "  ${H_RED}%s${NC}\n" "${MSG[DESC_ALL_1]}"
+    printf "  ${H_RED}%s${NC}\n" "${MSG[DESC_ALL_2]}"
+  fi
+  if [[ "$DRY_RUN" == true ]]; then
+    printf "  ${H_YELLOW}%s${NC}\n" "${MSG[DESC_DRY]}"
+  fi
+
+  printf "\n${H_YELLOW}%s ${NC}" "${MSG[ASK_CONFIRM]}"
+  read -r confirm || true
+  case "$confirm" in
+  [yY][eE][sS] | [yY] | "")
+    ;;
+  *)
+    printf "%s\n" "${MSG[ABORT]}"
+    exit 0
+    ;;
+  esac
+}
+
+start_sudo_keepalive() {
+  if ! sudo -v; then
+    _error "${MSG[SUDO_FAIL]}"
+  fi
+
+  while true; do
+    sudo -n true
+    sleep 60
+  done 2>/dev/null &
+  SUDO_PID=$!
+  trap cleanup_on_exit EXIT
+}
+
+cleanup_orphans() {
+  _info "${MSG[STEP_ORPHAN]}"
+  local orphans
+  orphans=$(pacman -Qtdq || true)
+
+  if [[ -z "$orphans" ]]; then
+    _success "${MSG[ORPHAN_NONE]}"
+    return
+  fi
+
+  _warn "${MSG[ORPHAN_FOUND]}"
+  mapfile -t orphan_arr <<<"$orphans"
+  if [[ "$DRY_RUN" == true ]]; then
+    dry_run_action "$PKG_MNGR -Rns <orphans> --noconfirm (${#orphan_arr[@]} packages)"
+    _success "${MSG[DRY_STEP_DONE]}"
+    return
+  fi
+  "$PKG_MNGR" -Rns "${orphan_arr[@]}" --noconfirm
+  _success "${MSG[ORPHAN_CLEAN]}"
+}
+
+cleanup_package_cache() {
+  if [[ "$CLEAN_ALL" == true ]]; then
+    _info "${MSG[STEP_CACHE_ALL]}"
+    if [[ "$DRY_RUN" == true ]]; then
+      dry_run_action "$PKG_MNGR -Scc"
+      _success "${MSG[DRY_STEP_DONE]}"
+      return
+    fi
+    yes | "$PKG_MNGR" -Scc >/dev/null 2>&1 || true
+    _success "${MSG[CACHE_ALL_DONE]}"
+    return
+  fi
+
+  _info "${MSG[STEP_CACHE]}"
+  if [[ "$DRY_RUN" == true ]]; then
+    dry_run_action "$PKG_MNGR -Sc --noconfirm"
+    _success "${MSG[DRY_STEP_DONE]}"
+    return
+  fi
+  "$PKG_MNGR" -Sc --noconfirm >/dev/null 2>&1 || true
+  _success "${MSG[CACHE_DONE]}"
+}
+
+cleanup_download_dirs() {
+  local target_dir="/var/cache/pacman/pkg"
+  if [[ ! -d "$target_dir" ]]; then
+    return
+  fi
+
+  _info "${MSG[STEP_BROKEN]}"
+  if [[ "$DRY_RUN" == true ]]; then
+    local count
+    count=$(sudo find "$target_dir" -maxdepth 1 -type d -name "download-*" 2>/dev/null | wc -l | xargs)
+    dry_run_action "remove download-* directories under $target_dir (found: $count)"
+    _success "${MSG[DRY_STEP_DONE]}"
+    return
+  fi
+  sudo find "$target_dir" -maxdepth 1 -type d -name "download-*" -exec rm -rf {} + 2>/dev/null || true
+  _success "${MSG[BROKEN_DONE]}"
+}
+
+cleanup_journal() {
+  _info "${MSG[STEP_LOG]}"
+  if [[ "$DRY_RUN" == true ]]; then
+    dry_run_action "journalctl --vacuum-time=2weeks"
+    _success "${MSG[DRY_STEP_DONE]}"
+    return
+  fi
+  sudo journalctl --vacuum-time=2weeks >/dev/null 2>&1 || true
+  _success "${MSG[LOG_DONE]}"
+}
+
+cleanup_coredump() {
+  local coredump_dir="/var/lib/systemd/coredump"
+  _info "${MSG[STEP_COREDUMP]}"
+
+  if [[ ! -d "$coredump_dir" ]]; then
+    _success "${MSG[COREDUMP_NONE]}"
+    return
+  fi
+
+  if [[ "$DRY_RUN" == true ]]; then
+    local count
+    count=$(sudo find "$coredump_dir" -maxdepth 1 -type f 2>/dev/null | wc -l | xargs)
+    dry_run_action "remove files in $coredump_dir (found: $count)"
+    _success "${MSG[DRY_STEP_DONE]}"
+    return
+  fi
+
+  sudo find "$coredump_dir" -mindepth 1 -delete 2>/dev/null || true
+  _success "${MSG[COREDUMP_DONE]}"
+}
+
+cleanup_user_cache() {
+  local trash_dir="$HOME/.local/share/Trash"
+  local thumb_dir="$HOME/.cache/thumbnails"
+  local clip_dir="$HOME/.cache/shorinclip"
+
+  _info "${MSG[STEP_TRASH]}"
+
+  if [[ "$DRY_RUN" == true ]]; then
+    local trash_count thumb_count clip_count
+    trash_count=$( [[ -d "$trash_dir" ]] && find "$trash_dir" -mindepth 1 2>/dev/null | wc -l | xargs || echo 0 )
+    thumb_count=$( [[ -d "$thumb_dir" ]] && find "$thumb_dir" -type f -atime +30 2>/dev/null | wc -l | xargs || echo 0 )
+    clip_count=$( [[ -d "$clip_dir" ]] && find "$clip_dir" -type f -atime +30 2>/dev/null | wc -l | xargs || echo 0 )
+    dry_run_action "clear Trash entries (found: $trash_count)"
+    dry_run_action "clear thumbnail files older than 30 days (found: $thumb_count)"
+    dry_run_action "clear shorinclip files older than 30 days (found: $clip_count)"
+    _success "${MSG[DRY_STEP_DONE]}"
+    return
+  fi
+
+  [[ -d "$trash_dir" ]] && find "$trash_dir" -mindepth 1 -delete 2>/dev/null || true
+  _success "${MSG[TRASH_DONE]}"
+
+  [[ -d "$thumb_dir" ]] && find "$thumb_dir" -type f -atime +30 -delete 2>/dev/null || true
+  _success "${MSG[THUMB_DONE]}"
+
+  [[ -d "$clip_dir" ]] && find "$clip_dir" -type f -atime +30 -delete 2>/dev/null || true
+  _success "${MSG[CLIP_DONE]}"
+}
+
+cleanup_flatpak() {
+  if ! command -v flatpak >/dev/null 2>&1; then
+    return
+  fi
+
+  _info "${MSG[STEP_FLATPAK]}"
+  if [[ "$DRY_RUN" == true ]]; then
+    dry_run_action "flatpak uninstall --unused -y"
+    _success "${MSG[DRY_STEP_DONE]}"
+    return
+  fi
+  flatpak uninstall --unused -y >/dev/null 2>&1 || true
+  _success "${MSG[FLATPAK_DONE]}"
+}
+
+is_root_btrfs() {
+  [[ "$(findmnt -n -o FSTYPE / 2>/dev/null)" == "btrfs" ]]
+}
+
+load_snapper_configs() {
+  mapfile -t SNAPPER_CONFIGS < <(
+    sudo LC_ALL=C snapper list-configs 2>/dev/null | awk -F'|' '
+      NR > 2 {
+        gsub(/^[ \t]+|[ \t]+$/, "", $1)
+        if ($1 != "") print $1
+      }
+    '
+  )
+}
+
+check_btrfs_cleanup_requirements() {
+  _info "${MSG[STEP_BTRFS_CHECK]}"
+
+  if ! is_root_btrfs; then
+    _warn "${MSG[BTRFS_SKIP_NOT_BTRFS]}"
+    return 1
+  fi
+
+  if ! command -v snapper >/dev/null 2>&1; then
+    _warn "${MSG[BTRFS_SKIP_NO_SNAPPER]}"
+    return 1
+  fi
+
+  load_snapper_configs
+  if [[ ${#SNAPPER_CONFIGS[@]} -eq 0 ]]; then
+    _warn "${MSG[BTRFS_SKIP_NO_CONFIG]}"
+    return 1
+  fi
+
+  return 0
+}
+
+cleanup_snapshots_normal_mode() {
+  _info "${MSG[STEP_SNAP]}"
+
+  local conf
+  for conf in "${SNAPPER_CONFIGS[@]}"; do
+    if [[ "$DRY_RUN" == true ]]; then
+      dry_run_action "snapper -c $conf cleanup number && snapper -c $conf cleanup timeline"
+      printf "  ${H_CYAN}Auto-Cleanup Preview:${NC} [%-4s]\n" "$conf"
+      continue
+    fi
+    sudo snapper -c "$conf" cleanup number >/dev/null 2>&1 || true
+    sudo snapper -c "$conf" cleanup timeline >/dev/null 2>&1 || true
+    printf "  ${H_CYAN}Auto-Cleanup Executed:${NC} [%-4s]\n" "$conf"
+  done
+
+  if [[ "$DRY_RUN" == true ]]; then
+    if [[ $found_backups -eq 1 ]]; then
+      _success "${MSG[DRY_STEP_DONE]}"
+    else
+      _success "${MSG[BTRFS_BA_NONE]}"
+    fi
+    return
+  fi
+
+  _success "${MSG[SNAP_DONE]}"
+}
+
+cleanup_snapshots_all_mode() {
+  _info "${MSG[STEP_CLEAR_SNAP]}"
+
+  local conf snap_id snap_desc
+  for conf in "${SNAPPER_CONFIGS[@]}"; do
+    while IFS='|' read -r snap_id _ _ _ _ _ snap_desc _; do
+      snap_id=$(echo "$snap_id" | xargs)
+      snap_desc=$(echo "$snap_desc" | xargs)
+
+      [[ "$snap_id" =~ ^[0-9]+$ ]] || continue
+      [[ "$snap_id" == "0" ]] && continue
+      [[ "${snap_desc,,}" == before* ]] && continue
+
+      if [[ "$DRY_RUN" == true ]]; then
+        [[ -z "$snap_desc" ]] && snap_desc="N/A"
+        printf "  ${H_CYAN}Would Remove Snapshot:${NC} [%-4s] ID: %-3s | Desc: %s\n" "$conf" "$snap_id" "$snap_desc"
+        continue
+      fi
+
+      if sudo snapper -c "$conf" delete "$snap_id" >/dev/null 2>&1; then
+        [[ -z "$snap_desc" ]] && snap_desc="N/A"
+        printf "  ${H_CYAN}Removed Snapshot:${NC} [%-4s] ID: %-3s | Desc: %s\n" "$conf" "$snap_id" "$snap_desc"
+      fi
+    done < <(sudo LC_ALL=C snapper -c "$conf" list 2>/dev/null || true)
+  done
+
+  if [[ "$DRY_RUN" == true ]]; then
+    _success "${MSG[DRY_STEP_DONE]}"
+    return
+  fi
+
+  _success "${MSG[CLEAR_SNAP_DONE]}"
+}
+
+cleanup_btrfs_assistant_backups() {
+  _info "${MSG[STEP_BTRFS_BA]}"
+
+  if ! command -v btrfs >/dev/null 2>&1; then
+    _warn "${MSG[BTRFS_TOOL_MISSING]}"
+    return
+  fi
+
+  local btrfs_root_dev mount_dir found_backups=0
+  btrfs_root_dev=$(findmnt -n -o SOURCE / | cut -d'[' -f1)
+  mount_dir=$(mktemp -d /tmp/btrfs_clean_XXXX)
+
+  if ! sudo mount -t btrfs -o subvolid=5 "$btrfs_root_dev" "$mount_dir" 2>/dev/null; then
+    rmdir "$mount_dir" || true
+    _warn "${MSG[BTRFS_MOUNT_FAIL]}"
+    return
+  fi
+
+  while IFS= read -r -d '' subvol_dir; do
+    if sudo btrfs subvolume show "$subvol_dir" >/dev/null 2>&1; then
+      if [[ "$DRY_RUN" == true ]]; then
+        printf "  ${H_CYAN}Would Remove Backup Subvol:${NC} %s\n" "$(basename "$subvol_dir")"
+      else
+        sudo btrfs subvolume delete "$subvol_dir" >/dev/null 2>&1 || true
+        printf "  ${H_CYAN}Removed Backup Subvol:${NC} %s\n" "$(basename "$subvol_dir")"
+      fi
+      found_backups=1
+    fi
+  done < <(sudo find "$mount_dir" -maxdepth 1 -type d -name "*_backup_20*" -print0 2>/dev/null)
+
+  sudo umount "$mount_dir" || true
+  rmdir "$mount_dir" || true
+
+  if [[ "$DRY_RUN" == true ]]; then
+    _success "${MSG[DRY_STEP_DONE]}"
+    return
+  fi
+
+  if [[ $found_backups -eq 1 ]]; then
+    _success "${MSG[BTRFS_BA_DONE]}"
+  else
+    _success "${MSG[BTRFS_BA_NONE]}"
+  fi
+}
+
+cleanup_btrfs_related() {
+  if ! check_btrfs_cleanup_requirements; then
+    return
+  fi
+
+  if [[ "$CLEAN_ALL" == true ]]; then
+    cleanup_snapshots_all_mode
+  else
+    cleanup_snapshots_normal_mode
+  fi
+
+  cleanup_btrfs_assistant_backups
+}
+
+main() {
+  parse_args "$@"
+  setup_messages
+  detect_package_manager
+  print_intro_and_confirm
+
+  _info "${MSG[HELPER_USE]}" "$PKG_MNGR"
+  start_sudo_keepalive
+
+  cleanup_orphans
+  cleanup_package_cache
+  cleanup_download_dirs
+  cleanup_journal
+  cleanup_coredump
+  cleanup_user_cache
+  cleanup_flatpak
+  cleanup_btrfs_related
+
+  printf "\n"
+  _success "${MSG[DONE]}"
+}
+
+main "$@"
