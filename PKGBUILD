@@ -1,10 +1,10 @@
 # Maintainer: Aromatic <symwww@outlook.com>
 pkgname=catos-hello
 pkgver=0.1.0
-pkgrel=3
+pkgrel=4
 pkgdesc="CatOS Hello - welcome application"
 arch=('x86_64')
-url="https://github.com/Aromatic05/CatOS-Hello"
+url="https://github.com/Aromatic05/catOS-hello"
 license=('GPL')
 depends=('qt6-base' 'rate-mirrors' 'lshw' 'inxi' 'lsb-release')
 makedepends=('cmake' 'gcc' 'make' 'qt6-tools' 'qt5-translations')
@@ -19,14 +19,20 @@ build() {
 
 package() {
     install -d "$pkgdir/usr/bin"
-    # 安装主程序（假定可执行文件输出为 build/CatOS-Hello）
+
     cd catos-hello
+    # 安装 toolkit 工具到 /usr/bin
+    for tool in clean mirror-update pac pacd pacr pak sysup; do
+        install -Dm755 "toolkits/$tool" "$pkgdir/usr/bin/$tool"
+    done
+
+    # 安装辅助脚本到 /usr/bin
     install -Dm755 scripts/CollectLogs "$pkgdir/usr/bin/CollectLogs"
     install -Dm755 scripts/RunInTerminal "$pkgdir/usr/bin/RunInTerminal"
     install -Dm755 scripts/ResetKeyring "$pkgdir/usr/bin/ResetKeyring"
-    if [ -f build/CatOS-Hello ]; then
-        install -Dm755 build/CatOS-Hello "$pkgdir/usr/bin/$pkgname"
-    fi
+
+    # 安装主程序（可执行文件输出为 build/catos-hello）
+    install -Dm755 build/catos-hello "$pkgdir/usr/bin/$pkgname"
 
     # 安装翻译文件（.qm），优先使用 build 下生成的 qm，然后使用 translations 目录
     install -d "$pkgdir/usr/share/$pkgname/translations"
